@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Retry tests
+        run: bun run test:retry
+
+      - name: Pagination tests
+        run: bun run test:pagination
+
+      - name: Data store tests
+        run: bun run test:data
+
+      - name: UI contract tests
+        run: bun run test:ui
+
+      - name: Compile Windows executable
+        run: bun run build

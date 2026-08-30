@@ -1,0 +1,3 @@
+@echo off
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$closed=$false; foreach($port in 17891..17899){ try { $health=Invoke-RestMethod -Uri ('http://127.0.0.1:'+$port+'/api/health') -TimeoutSec 1; if($health.appId -eq 'huangguo-potplayer-bridge'){ $headers=@{'X-HG-Token'=$health.sessionToken;'Origin'=$health.origin}; Invoke-RestMethod -Method Post -Uri ($health.origin+'/api/shutdown') -Headers $headers -ContentType 'application/json' -Body '{}' -TimeoutSec 2 | Out-Null; $closed=$true } } catch {} }; if($closed){ Write-Host 'Point player stopped.' } else { Write-Host 'No running point player was found.' }"
+pause

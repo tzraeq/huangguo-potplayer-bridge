@@ -1,0 +1,24 @@
+# Build and runtime output
+dist/
+work/
+playlists/
+
+# Local application data
+settings.json
+library.json
+tray.ps1
+*.m3u
+*.m3u8
+
+# Local packages and secrets
+*.exe
+*.zip
+*.zip.sha256
+.env
+.env.*
+
+# Editor and OS noise
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

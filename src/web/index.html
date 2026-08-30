@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#111210">
+  <title>黄果 · PotPlayer 点播台</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="返回首页">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span><strong>黄果</strong><small>PotPlayer 点播台</small></span>
+    </a>
+    <form class="search" id="search-form" role="search">
+      <label class="sr-only" for="search-input">搜索短剧</label>
+      <input id="search-input" name="q" type="search" autocomplete="off" maxlength="80" placeholder="搜索片名">
+      <button type="submit">搜索</button>
+    </form>
+    <div class="top-actions">
+      <button class="player-state" id="player-state" type="button" aria-label="打开播放器设置">
+        <span class="state-dot" aria-hidden="true"></span>
+        <span id="player-state-text">检测 PotPlayer</span>
+      </button>
+      <button class="icon-button" id="diagnostics-button" type="button" aria-label="诊断信息" title="诊断信息">◎</button>
+      <button class="icon-button" id="settings-button" type="button" aria-label="设置" title="设置">⚙</button>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs" aria-label="内容分类"></nav>
+  <div class="source-alert" id="source-alert" role="alert" hidden>
+    <strong>内容源结构可能已经变化</strong>
+    <span id="source-alert-text"></span>
+    <button type="button" id="source-alert-diagnostics">查看诊断</button>
+  </div>
+
+  <main>
+    <section class="heading-row" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow" id="page-kicker">LOCAL VOD</p>
+        <h1 id="page-title">正在连接内容源</h1>
+      </div>
+      <div class="heading-meta">
+        <p class="result-note" id="result-note" aria-live="polite"></p>
+        <button class="text-button" id="clear-history" type="button" hidden>清空记录</button>
+      </div>
+    </section>
+
+    <section class="catalog" aria-live="polite" aria-busy="true">
+      <div class="card-grid" id="card-grid"></div>
+      <div class="empty-state" id="empty-state" hidden>
+        <span aria-hidden="true">∅</span>
+        <h2 id="empty-title">这里暂时没有内容</h2>
+        <p id="empty-copy">换个分类或关键词再试一次。</p>
+      </div>
+      <div class="load-row">
+        <button class="secondary-button" id="load-more" type="button" hidden>加载下一页</button>
+      </div>
+    </section>
+  </main>
+
+  <dialog class="detail-dialog" id="detail-dialog">
+    <div class="detail-shell">
+      <button class="dialog-close" type="button" data-close="detail-dialog" aria-label="关闭">×</button>
+      <div class="detail-loading" id="detail-loading">
+        <span class="spinner" aria-hidden="true"></span>
+        <p>正在读取剧集…</p>
+      </div>
+      <div id="detail-content" hidden>
+        <div class="detail-hero">
+          <div class="detail-poster" id="detail-poster"><span>HG</span></div>
+          <div class="detail-copy">
+            <p class="eyebrow">ON DEMAND</p>
+            <h2 id="detail-title"></h2>
+            <p id="detail-description"></p>
+            <div class="detail-actions">
+              <button class="secondary-button" id="favorite-button" type="button">☆ 收藏</button>
+              <button class="secondary-button" id="resume-button" type="button" hidden>继续点播</button>
+              <button class="primary-button" id="open-playlist" type="button">整剧加入 PotPlayer</button>
+              <button class="secondary-button" id="copy-playlist" type="button">复制已生成 M3U</button>
+            </div>
+            <div class="playlist-progress" id="playlist-progress" hidden>
+              <div class="progress-track"><span id="playlist-progress-bar"></span></div>
+              <div class="progress-copy">
+                <span id="playlist-progress-text">准备整剧任务</span>
+                <button class="text-button danger" id="cancel-playlist" type="button">取消</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="episodes-section">
+          <div class="section-label">
+            <h3>选集</h3>
+            <span id="episode-count"></span>
+          </div>
+          <div class="episode-grid" id="episode-grid"></div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="settings-dialog" id="settings-dialog">
+    <form class="settings-shell" id="settings-form">
+      <button class="dialog-close" type="button" data-close="settings-dialog" aria-label="关闭">×</button>
+      <p class="eyebrow">SETTINGS</p>
+      <h2>播放器设置</h2>
+      <p class="settings-help">程序通常会自动识别 PotPlayer。只有状态显示未找到时才需要手动填写。</p>
+      <label for="potplayer-path">PotPlayer 程序路径</label>
+      <input id="potplayer-path" name="potPlayerPath" type="text" spellcheck="false" placeholder="D:\Program Files\DAUM\PotPlayer\PotPlayerMini64.exe">
+      <label for="data-directory">数据目录</label>
+      <input id="data-directory" type="text" readonly>
+      <div class="settings-actions">
+        <button class="primary-button" type="submit">保存并检测</button>
+        <button class="secondary-button" id="restart-button" type="button">重启服务</button>
+        <button class="secondary-button danger" id="shutdown-button" type="button">关闭本地服务</button>
+      </div>
+      <p class="settings-foot">收藏、观看记录、设置和直链播放列表保存在本机 LocalAppData；播放列表超过 7 天会自动清理。</p>
+    </form>
+  </dialog>
+
+  <dialog class="diagnostics-dialog" id="diagnostics-dialog">
+    <div class="diagnostics-shell">
+      <button class="dialog-close" type="button" data-close="diagnostics-dialog" aria-label="关闭">×</button>
+      <p class="eyebrow">DIAGNOSTICS</p>
+      <h2>运行诊断</h2>
+      <p class="settings-help">这里不显示会话令牌和视频地址，可安全复制用于排查问题。</p>
+      <pre id="diagnostics-output">正在读取诊断信息…</pre>
+      <div class="settings-actions">
+        <button class="primary-button" id="refresh-diagnostics" type="button">刷新</button>
+        <button class="secondary-button" id="copy-diagnostics" type="button">复制诊断信息</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

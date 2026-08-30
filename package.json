@@ -1,0 +1,15 @@
+{
+  "name": "huangguo-potplayer-bridge",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun src/server.js",
+    "test:retry": "bun test/retry.test.mjs",
+    "test:pagination": "bun test/pagination.test.mjs",
+    "test:data": "bun test/data-store.test.mjs",
+    "test:ui": "bun test/ui-contract.test.mjs",
+    "test:integration": "bun test/integration.mjs",
+    "build": "bun build src/server.js --compile --windows-hide-console --windows-title=\"黄果 PotPlayer 点播台\" --windows-publisher=\"Local build\" --windows-version=1.1.0.0 --windows-description=\"Local VOD bridge for PotPlayer\" --outfile dist/HuangguoPotPlayer.exe"
+  }
+}
