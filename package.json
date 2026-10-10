@@ -7,6 +7,7 @@
     "start": "bun src/server.js",
     "test:retry": "bun test/retry.test.mjs",
     "test:pagination": "bun test/pagination.test.mjs",
+    "test:source": "bun test/source-routing.test.mjs",
     "test:data": "bun test/data-store.test.mjs",
     "test:ui": "bun test/ui-contract.test.mjs",
     "test:integration": "bun test/integration.mjs",

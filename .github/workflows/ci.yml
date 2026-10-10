@@ -30,6 +30,9 @@ jobs:
       - name: Pagination tests
         run: bun run test:pagination
 
+      - name: Source routing tests
+        run: bun run test:source
+
       - name: Data store tests
         run: bun run test:data
 

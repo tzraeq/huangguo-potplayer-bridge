@@ -1,6 +1,11 @@
 import { fetchWithRetry } from './retry.js';
+import { recordDiagnostic } from './diagnostics.js';
 
-export const SITE = 'https://huangguoai.com';
+export const SOURCE_ENTRY = 'https://huangguoai.ai';
+const FALLBACK_SITE = 'https://huangguoai.com';
+export let SITE = FALLBACK_SITE;
+let sourceSelected = false;
+let sourceSelection = null;
 
 export const TABS = Object.freeze([
   { name: '首页', id: 'home' },
@@ -19,7 +24,7 @@ export const SITE_HEADERS = Object.freeze({
   'User-Agent': USER_AGENT,
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'zh-CN,zh;q=0.9',
-  Referer: `${SITE}/`,
+  get Referer() { return `${SITE}/`; },
 });
 
 const catalogCache = new Map();
@@ -52,7 +57,7 @@ function markStructureOk(area) {
 }
 
 export function getSourceStatus() {
-  return { ...sourceStatus };
+  return { ...sourceStatus, entryUrl: SOURCE_ENTRY, baseUrl: sourceSelected ? SITE : '' };
 }
 
 function getCached(cache, key) {
@@ -133,7 +138,7 @@ function metaContent(html, property) {
   return '';
 }
 
-export async function fetchHtml(url, referer = `${SITE}/`, options = {}) {
+async function fetchPage(url, referer, options = {}) {
   return fetchWithRetry(
     url,
     {
@@ -142,7 +147,8 @@ export async function fetchHtml(url, referer = `${SITE}/`, options = {}) {
       signal: options.signal,
     },
     {
-      timeoutMs: 20_000,
+      timeoutMs: options.timeoutMs || 20_000,
+      attempts: options.attempts,
       label: '连接内容源',
       consume: async (response) => {
         if (!response.ok) {
@@ -152,10 +158,70 @@ export async function fetchHtml(url, referer = `${SITE}/`, options = {}) {
         }
         const contentLength = Number(response.headers.get('content-length') || 0);
         if (contentLength > 5_000_000) throw new Error('目标页面异常过大，已停止读取');
-        return response.text();
+        return { html: await response.text(), url: response.url || url };
       },
     }
   );
+}
+
+export async function fetchHtml(url, referer = `${SITE}/`, options = {}) {
+  return (await fetchPage(url, referer, options)).html;
+}
+
+export function parseSourceRoutes(html) {
+  const routes = new Set();
+  for (const tag of String(html || '').match(/<a\b[^>]*>/gi) || []) {
+    if (!attribute(tag, 'class').split(/\s+/).includes('use-btn')) continue;
+    try {
+      const url = new URL(attribute(tag, 'href'), `${SOURCE_ENTRY}/`);
+      if (url.protocol === 'https:' && url.origin !== SOURCE_ENTRY && !url.username && !url.password) {
+        routes.add(url.origin);
+      }
+    } catch {}
+  }
+  return [...routes];
+}
+
+async function selectSource() {
+  let routes = [];
+  try {
+    const html = await fetchHtml(`${SOURCE_ENTRY}/`, `${SOURCE_ENTRY}/`, { timeoutMs: 10_000, attempts: 2 });
+    routes = parseSourceRoutes(html);
+    if (!routes.length) throw new Error('发布页没有返回线路按钮');
+  } catch (error) {
+    recordDiagnostic('warn', 'source.discovery', '线路发布页读取失败，将验证永久域名', { reason: error.message });
+  }
+
+  for (const candidate of new Set([...routes, FALLBACK_SITE])) {
+    try {
+      const page = await fetchPage(`${candidate}/`, `${candidate}/`, { attempts: 1 });
+      if (!/\bhg-card-grid\b/i.test(page.html) || !parseGridCards(page.html, true).length) {
+        throw new Error('线路首页没有可解析的目录内容');
+      }
+      SITE = new URL(page.url).origin;
+      sourceSelected = true;
+      setCached(catalogCache, 'home:1', {
+        tab: 'home', page: 1, list: parseGridCards(page.html, true), hasMore: false,
+      });
+      markStructureOk('catalog');
+      recordDiagnostic('info', 'source.selected', '已选定可用的内容源线路', { host: new URL(SITE).host });
+      return;
+    } catch (error) {
+      recordDiagnostic('warn', 'source.probe', '内容源线路不可用，继续尝试下一条', {
+        host: new URL(candidate).host, reason: error.message,
+      });
+    }
+  }
+  throw new Error('没有可用的内容源线路，请检查网络或稍后重试');
+}
+
+async function ensureSource(signal) {
+  signal?.throwIfAborted();
+  if (!sourceSelected) {
+    sourceSelection ||= selectSource().finally(() => { sourceSelection = null; });
+    await sourceSelection;
+  }
+  signal?.throwIfAborted();
 }
 
 export function hasNextPage(html) {
@@ -194,12 +260,12 @@ function cardBlocks(slice) {
 }
 
 function parseCardBlock(block) {
-  const detail = block.match(/href=(["'])[^"']*\/detail\/(\d+)\/[^"']*\1/i);
+  const detail = block.match(/href=(["'])[^"']*\/video\/(\d+)\/[^"']*\1/i);
   if (!detail) return null;
   const imageTag = block.match(/<(?:img|source)\b[^>]*(?:data-src|src)=(["'])[^"']+\1[^>]*>/i)?.[0] || '';
   const image = attribute(imageTag, 'data-src') || attribute(imageTag, 'src');
   const titleMatch = block.match(/hg-drama-card__title[^>]*>([\s\S]*?)<\/a>/i);
-  const fallbackTitle = block.match(/<a[^>]+href=(["'])[^"']*\/detail\/\d+\/[^"']*\1[^>]*>([\s\S]*?)<\/a>/i);
+  const fallbackTitle = block.match(/<a[^>]+href=(["'])[^"']*\/video\/\d+\/[^"']*\1[^>]*>([\s\S]*?)<\/a>/i);
   const title = stripTags(titleMatch?.[1] || fallbackTitle?.[2] || '');
   if (!title) return null;
   const episode = stripTags(block.match(/hg-drama-card__episode[^>]*>([\s\S]*?)<\/span>/i)?.[1] || '');
@@ -237,11 +303,11 @@ function parseRanks(html) {
   const seen = new Set();
   for (let index = 0; index < starts.length; index += 1) {
     const block = slice.slice(starts[index], starts[index + 1] || slice.length);
-    const detail = block.match(/href=(["'])[^"']*\/detail\/(\d+)\/[^"']*\1/i);
+    const detail = block.match(/href=(["'])[^"']*\/video\/(\d+)\/[^"']*\1/i);
     if (!detail || seen.has(detail[2])) continue;
     const title = stripTags(
       block.match(/hg-rank-item__title[^>]*>([\s\S]*?)<\/h2>/i)?.[1] ||
-      block.match(/<a[^>]+href=(["'])[^"']*\/detail\/\d+\/[^"']*\1[^>]*>([\s\S]*?)<\/a>/i)?.[2] ||
+      block.match(/<a[^>]+href=(["'])[^"']*\/video\/\d+\/[^"']*\1[^>]*>([\s\S]*?)<\/a>/i)?.[2] ||
       ''
     );
     if (!title) continue;
@@ -252,6 +318,13 @@ function parseRanks(html) {
     output.push({ id: detail[2], title, image: stableImageUrl(image), remark });
   }
   return output;
+}
+
+function checkParsedCards(html, list, area) {
+  if (!list.length && /<div\b[^>]*\bclass=(["'])[^"']*\bhg-(?:drama-card|rank-item)\b[^"']*\1/i.test(html)) {
+    throw new SourceStructureError(area, '内容源页面存在条目，但无法解析，请检查页面结构是否已经更新');
+  }
+  return list;
 }
 
 function ensureId(id) {
@@ -269,6 +342,7 @@ function ensureTab(id) {
 export async function getCatalog(tabId = 'home', pageValue = 1, options = {}) {
   const tab = ensureTab(tabId);
   const page = Math.max(1, Math.min(100, Number.parseInt(pageValue, 10) || 1));
+  await ensureSource(options.signal);
   const key = `${tab}:${page}`;
   const cached = getCached(catalogCache, key);
   if (cached) return cached;
@@ -289,7 +363,7 @@ export async function getCatalog(tabId = 'home', pageValue = 1, options = {}) {
   if (!expectedMarker.test(html)) {
     throw new SourceStructureError('catalog', '内容源目录结构可能已经更新，请检查新版程序');
   }
-  const list = ranks ? parseRanks(html) : parseGridCards(html, tab === 'home');
+  const list = checkParsedCards(html, ranks ? parseRanks(html) : parseGridCards(html, tab === 'home'), 'catalog');
   markStructureOk('catalog');
   return setCached(catalogCache, key, {
     tab,
@@ -303,6 +377,7 @@ export async function searchCatalog(query, pageValue = 1, options = {}) {
   const text = String(query || '').trim().slice(0, 80);
   const page = Math.max(1, Math.min(100, Number.parseInt(pageValue, 10) || 1));
   if (!text) return { query: '', page, list: [], hasMore: false };
+  await ensureSource(options.signal);
   const key = `search:${text}:${page}`;
   const cached = getCached(catalogCache, key);
   if (cached) return cached;
@@ -317,11 +392,12 @@ export async function searchCatalog(query, pageValue = 1, options = {}) {
   if (!/\bhg-card-grid\b/i.test(html)) {
     throw new SourceStructureError('search', '内容源搜索结构可能已经更新，请检查新版程序');
   }
+  const list = checkParsedCards(html, parseGridCards(html, false), 'search');
   markStructureOk('search');
   return setCached(catalogCache, key, {
     query: text,
     page,
-    list: parseGridCards(html, false),
+    list,
     hasMore: hasNextPage(html),
   });
 }
@@ -348,11 +424,12 @@ function episodeAnchors(html) {
 
 export async function getDetail(idValue, force = false, signal) {
   const id = ensureId(idValue);
+  await ensureSource(signal);
   if (!force) {
     const cached = getCached(detailCache, id);
     if (cached) return cached;
   }
-  const detailUrl = `${SITE}/detail/${id}/`;
+  const detailUrl = `${SITE}/video/${id}/`;
   const html = await fetchHtml(detailUrl, `${SITE}/`, { signal });
   let episodes = episodeAnchors(html);
   if (!episodes.length) {
